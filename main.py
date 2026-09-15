@@ -124,7 +124,7 @@ def upload_to_youtube(video_path, title, description):
 # Main Runner
 def main():
     print("Step 1: Fetching reference video...")
-    ref_url = get_latest_video_url(https://youtube.com/@stay4ever67?si=d7zngZj4wZ2zlrTO)
+    ref_url = get_latest_video_url("https://youtube.com/@stay4ever67?si=d7zngZj4wZ2zlrTO")
     
     print("Step 2: Analyzing with Gemini...")
     data = generate_script_and_prompts(ref_url)
