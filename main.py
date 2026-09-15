@@ -1,5 +1,6 @@
-import os
+hereimport os
 import json
+import re
 import asyncio
 import yt_dlp
 import edge_tts
@@ -10,81 +11,99 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# 1. Credentials from Environment
+# 1. Environment Secrets
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 HF_TOKEN = os.environ.get("HF_TOKEN")
 YT_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID")
 YT_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET")
 YT_REFRESH_TOKEN = os.environ.get("YOUTUBE_REFRESH_TOKEN")
 
-TARGET_CHANNEL_URL = "https://www.youtube.com/@YOUR_TARGET_CHANNEL/shorts"
+# Target Shorts Channel
+TARGET_CHANNEL_URL = "https://youtube.com/@stay4ever67/shorts"
 
-# 2. Fetch Latest Video Link
+# 2. Fetch Latest Video URL
 def get_latest_video_url(channel_url):
-    ydl_opts = {'extract_flat': True, 'playlist_items': '1'}
+    ydl_opts = {'extract_flat': True, 'playlist_items': '1', 'quiet': True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(channel_url, download=False)
-        return info['entries'][0]['url']
+        entry = info['entries'][0]
+        url = entry.get('url')
+        if not url.startswith("http"):
+            url = f"https://www.youtube.com/watch?v={url}"
+        return url
 
-# 3. Gemini Analysis & Prompt Creation
+# 3. Gemini Analysis & Content Generation
 def generate_script_and_prompts(video_url):
     client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = f"""
-    Analyze this reference YouTube video link: {video_url}
-    
-    Reverse-engineer its pacing, hook style, and suspense. Create an entirely NEW, original 40-50 second Hindi fact script on a similar trending/mysterious theme (to avoid copyright/reuse issues).
-    Also write 8 sequential English AI video prompts (each representing a 4-5 second visual scene).
+    Reference YouTube video link: {video_url}
 
-    Return ONLY a raw JSON object (no markdown code blocks, no backticks):
+    Analyze the style, suspense, and pacing of this video. Create an entirely NEW, original 40-50 second Hindi fact/story script on a similar viral theme (to avoid reused content policy).
+    Also provide 8 sequential AI video prompts in English for 4-5 second visual scenes.
+
+    Return ONLY a valid JSON object without any extra text or markdown formatting:
     {{
-      "title": "Catchy YouTube Shorts Title with #shorts",
-      "description": "Shorts description with tags",
-      "script": "Poori Hindi narration script yahan...",
+      "title": "Viral YouTube Shorts Title #shorts",
+      "description": "Shorts description with hashtags #shorts #facts #viral",
+      "script": "Hindi narration script yahan...",
       "prompts": [
-        "cinematic 8k shot of ancient jungle ruins, moody lighting",
-        "close up of golden artifact glowing in dark cave"
+        "cinematic wide angle shot of mysterious glowing ancient temple ruins in rainforest, 8k",
+        "close up of mystical ancient artifact pulsing with blue light"
       ]
     }}
     """
+    
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         contents=prompt
     )
-    raw_text = response.text.replace("```json", "").replace("```", "").strip()
+    
+    # Clean output to ensure valid JSON
+    raw_text = response.text.strip()
+    match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+    if match:
+        raw_text = match.group(0)
+    
     return json.loads(raw_text)
 
-# 4. Generate Hindi Voiceover (Edge-TTS)
+# 4. Generate Hindi Voiceover
 async def make_audio(text, output_path="voice.mp3"):
     communicate = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
     await communicate.save(output_path)
 
-# 5. Generate AI Video Clips (Hugging Face)
+# 5. Generate AI Video Clips via Hugging Face
 def generate_clips(prompts):
     client = Client("Lightricks/LTX-Video", hf_token=HF_TOKEN)
     clip_paths = []
     
     for i, p in enumerate(prompts):
-        print(f"Generating clip {i+1}/{len(prompts)}...")
+        print(f"Generating clip {i+1}/{len(prompts)}: {p[:50]}...")
         try:
             res = client.predict(
                 prompt=p,
-                negative_prompt="blurry, distorted, ugly, watermark, text",
+                negative_prompt="blurry, distorted, ugly, watermark, text, low quality",
                 api_name="/generate_video"
             )
             clip_paths.append(res)
         except Exception as e:
-            print(f"Error on prompt {i+1}: {e}")
+            print(f"Clip {i+1} generation failed, skipping: {e}")
             
     return clip_paths
 
-# 6. Assemble Video (MoviePy)
+# 6. Merge Video Clips and Audio
 def build_video(clip_paths, audio_path, output_path="final_shorts.mp4"):
-    clips = [VideoFileClip(p) for p in clip_paths if p and os.path.exists(p)]
-    full_video = concatenate_videoclips(clips, method="compose")
+    valid_clips = [VideoFileClip(p) for p in clip_paths if p and os.path.exists(p)]
+    if not valid_clips:
+        raise RuntimeError("No video clips were generated successfully.")
+        
+    full_video = concatenate_videoclips(valid_clips, method="compose")
     audio = AudioFileClip(audio_path)
     
-    full_video = full_video.with_audio(audio)
-    full_video = full_video.with_duration(audio.duration)
+    # MoviePy 2.x method compatibility
+    try:
+        full_video = full_video.with_audio(audio).with_duration(audio.duration)
+    except AttributeError:
+        full_video = full_video.set_audio(audio).set_duration(audio.duration)
     
     full_video.write_videofile(
         output_path,
@@ -93,7 +112,7 @@ def build_video(clip_paths, audio_path, output_path="final_shorts.mp4"):
         audio_codec="aac"
     )
 
-# 7. Upload to YouTube via Refresh Token
+# 7. Upload to YouTube
 def upload_to_youtube(video_path, title, description):
     creds = Credentials(
         None,
@@ -108,7 +127,7 @@ def upload_to_youtube(video_path, title, description):
         "snippet": {
             "title": title,
             "description": description,
-            "categoryId": "28"  # Science & Technology
+            "categoryId": "28"
         },
         "status": {
             "privacyStatus": "public",
@@ -119,23 +138,24 @@ def upload_to_youtube(video_path, title, description):
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     response = request.execute()
-    print("Video uploaded successfully! Video ID:", response.get("id"))
+    print("Video uploaded successfully! ID:", response.get("id"))
 
-# Main Runner
+# Main Pipeline Runner
 def main():
     print("Step 1: Fetching reference video...")
-    ref_url = get_latest_video_url("https://youtube.com/@stay4ever67?si=d7zngZj4wZ2zlrTO")
+    ref_url = get_latest_video_url(TARGET_CHANNEL_URL)
+    print(f"Reference URL: {ref_url}")
     
-    print("Step 2: Analyzing with Gemini...")
+    print("Step 2: Analyzing with Gemini 3.6 Flash...")
     data = generate_script_and_prompts(ref_url)
     
     print("Step 3: Generating Hindi Audio...")
     asyncio.run(make_audio(data["script"], "audio.mp3"))
     
-    print("Step 4: Generating Video Clips...")
+    print("Step 4: Generating Video Clips from Hugging Face...")
     clips = generate_clips(data["prompts"][:8])
     
-    print("Step 5: Stitching Final Video...")
+    print("Step 5: Assembling final video...")
     build_video(clips, "audio.mp3", "shorts.mp4")
     
     print("Step 6: Uploading to YouTube...")
@@ -143,4 +163,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
