@@ -1,0 +1,10 @@
+google-genai
+edge-tts
+gradio_client
+moviepy
+yt-dlp
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+
