@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 import asyncio
 import yt_dlp
 import edge_tts
@@ -32,7 +33,7 @@ def get_latest_video_url(channel_url):
             url = f"https://www.youtube.com/watch?v={url}"
         return url
 
-# 3. Gemini Analysis & Content Generation
+# 3. Gemini Analysis & Content Generation (with Retry & Fallback)
 def generate_script_and_prompts(video_url):
     client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = f"""
@@ -52,19 +53,30 @@ def generate_script_and_prompts(video_url):
       ]
     }}
     """
-    
-    response = client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt
-    )
-    
-    # Clean output to ensure valid JSON
-    raw_text = response.text.strip()
-    match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-    if match:
-        raw_text = match.group(0)
-    
-    return json.loads(raw_text)
+
+    # 503 traffic spikes se bachne ke liye fallback models aur retries
+    models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+    last_error = None
+
+    for model_name in models_to_try:
+        for attempt in range(1, 4):
+            try:
+                print(f"Connecting to {model_name} (Attempt {attempt}/3)...")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt
+                )
+                raw_text = response.text.strip()
+                match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+                if match:
+                    raw_text = match.group(0)
+                return json.loads(raw_text)
+            except Exception as e:
+                print(f"Warning: {model_name} attempt {attempt} failed: {e}")
+                last_error = e
+                time.sleep(6)  # 6 second wait karega server load kam hone ke liye
+
+    raise RuntimeError(f"All Gemini models failed: {last_error}")
 
 # 4. Generate Hindi Voiceover
 async def make_audio(text, output_path="voice.mp3"):
@@ -99,7 +111,6 @@ def build_video(clip_paths, audio_path, output_path="final_shorts.mp4"):
     full_video = concatenate_videoclips(valid_clips, method="compose")
     audio = AudioFileClip(audio_path)
     
-    # MoviePy 2.x method compatibility
     try:
         full_video = full_video.with_audio(audio).with_duration(audio.duration)
     except AttributeError:
@@ -146,7 +157,7 @@ def main():
     ref_url = get_latest_video_url(TARGET_CHANNEL_URL)
     print(f"Reference URL: {ref_url}")
     
-    print("Step 2: Analyzing with Gemini 3.6 Flash...")
+    print("Step 2: Analyzing with Gemini...")
     data = generate_script_and_prompts(ref_url)
     
     print("Step 3: Generating Hindi Audio...")
