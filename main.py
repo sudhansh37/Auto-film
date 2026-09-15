@@ -33,7 +33,7 @@ def get_latest_video_url(channel_url):
             url = f"https://www.youtube.com/watch?v={url}"
         return url
 
-# 3. Gemini Analysis & Content Generation (with Retry & Fallback)
+# 3. Gemini Analysis & Content Generation
 def generate_script_and_prompts(video_url):
     client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = f"""
@@ -54,7 +54,6 @@ def generate_script_and_prompts(video_url):
     }}
     """
 
-    # 503 traffic spikes se bachne ke liye fallback models aur retries
     models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
     last_error = None
 
@@ -74,7 +73,7 @@ def generate_script_and_prompts(video_url):
             except Exception as e:
                 print(f"Warning: {model_name} attempt {attempt} failed: {e}")
                 last_error = e
-                time.sleep(6)  # 6 second wait karega server load kam hone ke liye
+                time.sleep(6)
 
     raise RuntimeError(f"All Gemini models failed: {last_error}")
 
@@ -83,9 +82,10 @@ async def make_audio(text, output_path="voice.mp3"):
     communicate = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
     await communicate.save(output_path)
 
-# 5. Generate AI Video Clips via Hugging Face
+# 5. Generate AI Video Clips via Hugging Face (Fixed: token=HF_TOKEN)
 def generate_clips(prompts):
-    client = Client("Lightricks/LTX-Video", hf_token=HF_TOKEN)
+    # hf_token ki jagah token parameter use kiya gaya hai
+    client = Client("Lightricks/LTX-Video", token=HF_TOKEN)
     clip_paths = []
     
     for i, p in enumerate(prompts):
