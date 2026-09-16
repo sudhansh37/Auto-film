@@ -2,8 +2,6 @@ import os
 import json
 import re
 import time
-import asyncio
-import yt_dlp
 import os
 import json
 import re
@@ -118,23 +116,22 @@ def generate_clips(prompts):
         print(f"Generating video clip {i+1}/{len(prompts)}: {p[:50]}...")
         try:
             res = client.predict(
-                p,                                                      # prompt
-                "blurry, distorted, ugly, watermark, text, low quality", # negative_prompt
-                None,                                                   # input_image
-                None,                                                   # input_video
-                512,                                                    # height
-                704,                                                    # width
-                "text-to-video",                                        # mode
-                3.0,                                                    # duration (sec)
-                9,                                                      # frames to use
-                42,                                                     # seed
-                True,                                                   # randomize_seed
-                3.0,                                                    # guidance_scale
-                True,                                                   # improve_texture
+                p,
+                "blurry, distorted, ugly, watermark, text, low quality",
+                None,
+                None,
+                512,
+                704,
+                "text-to-video",
+                3.0,
+                9,
+                42,
+                True,
+                3.0,
+                True,
                 api_name="/text_to_video"
             )
             
-            # Dictionary ya tuple se sahi path extract karna
             video_path = extract_file_path(res)
             
             if video_path and os.path.exists(video_path):
@@ -156,7 +153,6 @@ def build_video(clip_paths, audio_path, output_path="final_shorts.mp4"):
     full_video = concatenate_videoclips(valid_clips, method="compose")
     audio = AudioFileClip(audio_path)
     
-    # Audio ke hisaab se clips loop karna agar audio lambi ho
     if full_video.duration < audio.duration:
         repeat_count = int(audio.duration // full_video.duration) + 1
         full_video = concatenate_videoclips([full_video] * repeat_count, method="compose")
@@ -224,7 +220,9 @@ def main():
 
 if __name__ == "__main__":
     main()
-
+￼Enter asyncio
+import yt_dlp
+import edge_tts
 from google import genai
 from gradio_client import Client
 from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips
@@ -329,5 +327,3 @@ def generate_clips(prompts):
     clip_paths = []
     
     for i, p in enumerate(prompts):
-        print(f"Generating video clip {i+1}/{len(prompts)}: {p[:50]}...")
-        try:
