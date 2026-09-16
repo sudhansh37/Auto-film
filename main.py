@@ -220,7 +220,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-￼Enter asyncio
+
 import yt_dlp
 import edge_tts
 from google import genai
