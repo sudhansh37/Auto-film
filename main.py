@@ -39,8 +39,8 @@ def generate_script_and_prompts(video_url):
     prompt = f"""
     Reference YouTube video link: {video_url}
 
-    Analyze the style, suspense, and pacing of this video. Create an entirely NEW, original 40-50 second Hindi fact/story script on a similar viral theme (to avoid reused content policy).
-    Also provide 8 sequential AI video prompts in English for 4-5 second visual scenes.
+    Analyze the style, suspense, and pacing of this video. Create an entirely NEW, original 35-45 second Hindi fact/story script on a similar viral theme (to avoid reused content policy).
+    Also provide 4 detailed cinematic visual prompts in English for 3-4 second video scenes.
 
     Return ONLY a valid JSON object without any extra text or markdown formatting:
     {{
@@ -48,8 +48,8 @@ def generate_script_and_prompts(video_url):
       "description": "Shorts description with hashtags #shorts #facts #viral",
       "script": "Hindi narration script yahan...",
       "prompts": [
-        "cinematic wide angle shot of mysterious glowing ancient temple ruins in rainforest, 8k",
-        "close up of mystical ancient artifact pulsing with blue light"
+        "cinematic wide shot of ancient mystical ruins in dark fog, dramatic lighting, 8k",
+        "close up of golden glowing ancient artifact pulsing with energy"
       ]
     }}
     """
@@ -82,27 +82,44 @@ async def make_audio(text, output_path="voice.mp3"):
     communicate = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
     await communicate.save(output_path)
 
-# 5. Generate AI Video Clips via Hugging Face (Fixed: token=HF_TOKEN)
+# 5. Generate AI Video Clips via Hugging Face (Fixed Space & Arguments)
 def generate_clips(prompts):
-    # hf_token ki jagah token parameter use kiya gaya hai
-    client = Client("Lightricks/LTX-Video", token=HF_TOKEN)
+    # Asli working Space ka naam: Lightricks/ltx-video-distilled
+    client = Client("Lightricks/ltx-video-distilled", token=HF_TOKEN)
     clip_paths = []
     
     for i, p in enumerate(prompts):
-        print(f"Generating clip {i+1}/{len(prompts)}: {p[:50]}...")
+        print(f"Generating video clip {i+1}/{len(prompts)}: {p[:50]}...")
         try:
+            # LTX-Video space ke sahi inputs:
+            # prompt, negative_prompt, image_path, video_path, height, width, mode, duration, frames, seed, randomize_seed, guidance, improve_texture
             res = client.predict(
-                prompt=p,
-                negative_prompt="blurry, distorted, ugly, watermark, text, low quality",
-                api_name="/generate_video"
+                p,                                                      # prompt
+                "blurry, distorted, ugly, watermark, text, low quality", # negative_prompt
+                None,                                                   # input_image
+                None,                                                   # input_video
+                512,                                                    # height
+                704,                                                    # width
+                "text-to-video",                                        # mode
+                3.0,                                                    # duration (sec)
+                9,                                                      # frames to use
+                42,                                                     # seed
+                True,                                                   # randomize_seed
+                3.0,                                                    # guidance_scale
+                True,                                                   # improve_texture
+                api_name="/text_to_video"
             )
-            clip_paths.append(res)
+            # Output tuple ho sakta hai: (video_path, seed)
+            video_path = res[0] if isinstance(res, (tuple, list)) else res
+            if video_path and os.path.exists(video_path):
+                clip_paths.append(video_path)
+                print(f"Clip {i+1} ready: {video_path}")
         except Exception as e:
-            print(f"Clip {i+1} generation failed, skipping: {e}")
+            print(f"Clip {i+1} generation failed: {e}")
             
     return clip_paths
 
-# 6. Merge Video Clips and Audio
+# 6. Merge Video Clips and Audio (with Auto-Looping to match Audio)
 def build_video(clip_paths, audio_path, output_path="final_shorts.mp4"):
     valid_clips = [VideoFileClip(p) for p in clip_paths if p and os.path.exists(p)]
     if not valid_clips:
@@ -111,10 +128,16 @@ def build_video(clip_paths, audio_path, output_path="final_shorts.mp4"):
     full_video = concatenate_videoclips(valid_clips, method="compose")
     audio = AudioFileClip(audio_path)
     
+    # Agar clips ka total time audio se chhota hai, to clips ko repeat karein
+    if full_video.duration < audio.duration:
+        repeat_count = int(audio.duration // full_video.duration) + 1
+        full_video = concatenate_videoclips([full_video] * repeat_count, method="compose")
+    
+    # Video ko audio ke exact time par cut karein aur audio jodein
     try:
-        full_video = full_video.with_audio(audio).with_duration(audio.duration)
+        full_video = full_video.subclipped(0, audio.duration).with_audio(audio)
     except AttributeError:
-        full_video = full_video.set_audio(audio).set_duration(audio.duration)
+        full_video = full_video.subclip(0, audio.duration).set_audio(audio)
     
     full_video.write_videofile(
         output_path,
@@ -164,7 +187,7 @@ def main():
     asyncio.run(make_audio(data["script"], "audio.mp3"))
     
     print("Step 4: Generating Video Clips from Hugging Face...")
-    clips = generate_clips(data["prompts"][:8])
+    clips = generate_clips(data["prompts"][:4])
     
     print("Step 5: Assembling final video...")
     build_video(clips, "audio.mp3", "shorts.mp4")
