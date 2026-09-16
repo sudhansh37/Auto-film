@@ -224,7 +224,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-￼Enter edge_tts
+
 from google import genai
 from gradio_client import Client
 from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips
